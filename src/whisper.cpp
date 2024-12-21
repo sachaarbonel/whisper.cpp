@@ -892,6 +892,9 @@ struct whisper_context {
 
     whisper_state * state = nullptr;
 
+    // Add non-speech tokens vector
+    std::vector<whisper_token> non_speech_tokens;
+
     std::string path_model; // populated by whisper_init_from_file_with_params()
 };
 
@@ -1298,6 +1301,145 @@ static ggml_backend_buffer_type_t whisper_default_buffer_type(const whisper_cont
     return ggml_backend_cpu_buffer_type();
 }
 
+
+static std::vector<whisper_vocab::id> tokenize(const whisper_vocab & vocab, const std::string & text) {
+    std::vector<std::string> words;
+
+    // first split the text into words
+    {
+        std::string str = text;
+        std::string pat = R"('s|'t|'re|'ve|'m|'ll|'d| ?[[:alpha:]]+| ?[[:digit:]]+| ?[^\s[:alpha:][:digit:]]+|\s+(?!\S)|\s+)";
+
+        std::regex re(pat);
+        std::smatch m;
+
+        while (std::regex_search(str, m, re)) {
+            for (auto x : m) {
+                words.push_back(x);
+            }
+            str = m.suffix();
+        }
+    }
+
+    // Handle special tokens and non-speech tokens first
+    std::vector<whisper_vocab::id> tokens;
+    for (const auto & word : words) {
+        if (word.empty()) continue;
+
+        // Check if this is a special token or compound symbol
+        auto it = vocab.token_to_id.find(word);
+        if (it != vocab.token_to_id.end()) {
+            tokens.push_back(it->second);
+            continue;
+        }
+
+        // Check with space prefix for special tokens
+        it = vocab.token_to_id.find(" " + word);
+        if (it != vocab.token_to_id.end()) {
+            tokens.push_back(it->second);
+            continue;
+        }
+
+        // If not a special token, tokenize normally
+        int i = 0;
+        int n = word.size();
+        while (i < n) {
+            int j = n;
+            bool found = false;
+            while (j > i) {
+                auto sub = word.substr(i, j-i);
+                auto token_it = vocab.token_to_id.find(sub);
+                if (token_it != vocab.token_to_id.end()) {
+                    tokens.push_back(token_it->second);
+                    i = j;
+                    found = true;
+                    break;
+                }
+                --j;
+            }
+            if (!found) {
+                // If we can't find a token, try with space prefix
+                j = n;
+                while (j > i) {
+                    auto sub = " " + word.substr(i, j-i);
+                    auto token_it = vocab.token_to_id.find(sub);
+                    if (token_it != vocab.token_to_id.end()) {
+                        tokens.push_back(token_it->second);
+                        i = j;
+                        found = true;
+                        break;
+                    }
+                    --j;
+                }
+                
+                if (!found) {
+                    // Match Python's behavior more closely for unknown tokens
+                    if (vocab.token_to_id.find("<|UNKNOWN|>") != vocab.token_to_id.end()) {
+                        tokens.push_back(vocab.token_to_id.at("<|UNKNOWN|>"));
+                        WHISPER_LOG_WARN("Using unknown token for: '%s'\n", word.substr(i, 1).c_str());
+                    } else {
+                        WHISPER_LOG_ERROR("Cannot handle unknown token: '%s'\n", word.substr(i, 1).c_str());
+                    }
+                    ++i;
+                }
+            }
+        }
+    }
+
+    return tokens;
+}
+
+static std::vector<whisper_token> get_non_speech_tokens(struct whisper_context * ctx) {
+    std::set<whisper_token> result;
+    auto & vocab = ctx->vocab;
+
+    // Add space-hyphen and space-quote tokens first
+    {
+        auto tokens = tokenize(vocab, " -");
+        if (!tokens.empty()) {
+            result.insert(tokens[0]);
+        }
+        tokens = tokenize(vocab, " '");
+        if (!tokens.empty()) {
+            result.insert(tokens[0]);
+        }
+    }
+
+    // Match Python's exact symbol list
+    std::string symbols = "\"#()*+/:;<=>@[\\]^_`{|}~「」『』";
+    std::vector<std::string> compound_symbols = {
+        "<< ", ">> ", "<<< ", ">>> ", "-- ", "--- ", "-( ", "-[ ", "(' ", "(\" ",
+        "(( ", ")) ", "((( ", "))) ", "[[ ", "]] ", "{{ ", "}} ", "♪♪ ", "♪♪♪"
+    };
+
+    // Add compound symbols to the basic symbols list
+    for (const auto & s : compound_symbols) {
+        symbols += s;
+    }
+
+    // Miscellaneous musical symbols
+    std::string miscellaneous = "♩♪♫♬♭♮♯";
+    
+    // Process all symbols
+    for (const auto & symbol : symbols + miscellaneous) {
+        std::string s(1, symbol);
+        
+        // Try both with and without leading space
+        auto tokens = tokenize(vocab, s);
+        auto tokens_with_space = tokenize(vocab, " " + s);
+
+        // Add token if it's a single token or it's a miscellaneous symbol
+        if (tokens.size() == 1 || miscellaneous.find(symbol) != std::string::npos) {
+            result.insert(tokens[0]);
+        }
+        if (tokens_with_space.size() == 1 || miscellaneous.find(symbol) != std::string::npos) {
+            result.insert(tokens_with_space[0]);
+        }
+    }
+
+    return std::vector<whisper_token>(result.begin(), result.end());
+}
+
 // load the model from a ggml file
 //
 // file format:
@@ -1464,6 +1606,9 @@ static bool whisper_model_load(struct whisper_model_loader * loader, whisper_con
             vocab.token_not        += dt;
             vocab.token_beg        += dt;
         }
+
+        // Initialize non-speech tokens
+        wctx.non_speech_tokens = get_non_speech_tokens(&wctx);
 
         if (n_vocab < model.hparams.n_vocab) {
             WHISPER_LOG_INFO("%s: adding %d extra tokens\n", __func__, model.hparams.n_vocab - n_vocab);
@@ -3133,66 +3278,96 @@ static bool log_mel_spectrogram(
 
     return true;
 }
-
 // split text into tokens
 //
 // ref: https://github.com/openai/gpt-2/blob/a74da5d99abaaba920de8131d64da2862a8f213b/src/encoder.py#L53
-//
-// Regex (Python):
-// r"""'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-//
-// Regex (C++):
-// R"('s|'t|'re|'ve|'m|'ll|'d| ?[[:alpha:]]+| ?[[:digit:]]+| ?[^\s[:alpha:][:digit:]]+|\s+(?!\S)|\s+)"
-//
-static std::vector<whisper_vocab::id> tokenize(const whisper_vocab & vocab, const std::string & text) {
-    std::vector<std::string> words;
 
-    // first split the text into words
-    {
-        std::string str = text;
-        std::string pat = R"('s|'t|'re|'ve|'m|'ll|'d| ?[[:alpha:]]+| ?[[:digit:]]+| ?[^\s[:alpha:][:digit:]]+|\s+(?!\S)|\s+)";
+struct whisper_word {
+    std::string text;
+    std::vector<whisper_token> tokens;
+};
 
-        std::regex re(pat);
-        std::smatch m;
 
-        while (std::regex_search(str, m, re)) {
-            for (auto x : m) {
-                words.push_back(x);
-            }
-            str = m.suffix();
+static std::pair<std::vector<whisper_word>, bool> split_tokens_on_unicode(
+        struct whisper_context * ctx,
+        const std::vector<whisper_token> & tokens) {
+    std::vector<whisper_word> result;
+    const std::string replacement_char = "\ufffd";
+    
+    std::string decoded_full;
+    for (const auto & token : tokens) {
+        decoded_full += ctx->vocab.id_to_token[token];
+    }
+    
+    std::vector<whisper_token> current_tokens;
+    size_t unicode_offset = 0;
+    
+    for (const auto token : tokens) {
+        current_tokens.push_back(token);
+        std::string decoded;
+        for (const auto & t : current_tokens) {
+            decoded += ctx->vocab.id_to_token[t];
+        }
+        
+        if (decoded.find(replacement_char) == std::string::npos ||
+            decoded_full[unicode_offset + decoded.find(replacement_char)] == replacement_char[0]) {
+            
+            whisper_word word;
+            word.text = decoded;
+            word.tokens = current_tokens;
+            result.push_back(word);
+            
+            current_tokens.clear();
+            unicode_offset += decoded.length();
         }
     }
-
-    // find the longest tokens that form the words:
-    std::vector<whisper_vocab::id> tokens;
-    for (const auto & word : words) {
-        if (word.empty()) continue;
-
-        int i = 0;
-        int n = word.size();
-        while (i < n) {
-            int j = n;
-            bool found = false;
-            while (j > i) {
-                auto sub = word.substr(i, j-i);
-                auto it = vocab.token_to_id.find(sub);
-                if (it != vocab.token_to_id.end()) {
-                    tokens.push_back(it->second);
-                    i = j;
-                    found = true;
-                    break;
-                }
-                --j;
-            }
-            if (!found) {
-                WHISPER_LOG_ERROR("unknown token\n");
-                ++i;
-            }
-        }
-    }
-
-    return tokens;
+    
+    return {result, !current_tokens.empty()};
 }
+
+static std::vector<whisper_word> split_tokens_on_spaces(
+        struct whisper_context * ctx,
+        const std::vector<whisper_token> & tokens) {
+    auto [subwords, has_remaining] = split_tokens_on_unicode(ctx, tokens);
+    std::vector<whisper_word> words;
+    
+    for (const auto & subword : subwords) {
+        bool special = subword.tokens[0] >= ctx->vocab.token_eot;
+        bool with_space = !subword.text.empty() && subword.text[0] == ' ';
+        bool is_punctuation = subword.text.length() == 1 && 
+                            std::ispunct(static_cast<unsigned char>(subword.text[0]));
+        
+        if (special || with_space || is_punctuation || words.empty()) {
+            words.push_back(subword);
+        } else {
+            // Append to previous word
+            words.back().text += subword.text;
+            words.back().tokens.insert(
+                words.back().tokens.end(),
+                subword.tokens.begin(),
+                subword.tokens.end()
+            );
+        }
+    }
+    
+    return words;
+}
+
+static std::vector<whisper_word> split_to_word_tokens(
+        struct whisper_context * ctx,
+        const std::vector<whisper_token> & tokens) {
+    // Check if the language doesn't use spaces
+    const std::set<std::string> no_space_languages = {"zh", "ja", "th", "lo", "my", "yue"};
+    
+    const char* lang = whisper_lang_str(ctx->state->lang_id);
+    if (no_space_languages.find(lang) != no_space_languages.end()) {
+        auto [words, _] = split_tokens_on_unicode(ctx, tokens);
+        return words;
+    }
+    
+    return split_tokens_on_spaces(ctx, tokens);
+}
+
 
 //
 // interface implementation
