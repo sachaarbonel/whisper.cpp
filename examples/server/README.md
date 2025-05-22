@@ -70,7 +70,6 @@ curl 127.0.0.1:8080/load \
 
 ## Load testing with k6
 
-
 > **Note:** Install [k6](https://k6.io/docs/get-started/installation/) before running the benchmark script.
 
 You can benchmark the Whisper server using the provided bench.js script with [k6](https://k6.io/). This script sends concurrent multipart requests to the /inference endpoint and is fully configurable via environment variables.
