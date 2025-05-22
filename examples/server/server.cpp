@@ -1277,7 +1277,6 @@ int main(int argc, char ** argv) {
 
             // Update the global model path if params is shared or make a copy
             params.model = model_path; // Update model path in the global/default params struct
-                                    // This `params` is the one from main scope, captured by the lambda.
 
             // 4. Initialize new contexts and populate context_pool
             struct whisper_context_params cparams = whisper_context_default_params();
