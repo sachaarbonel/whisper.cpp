@@ -1128,7 +1128,11 @@ int main(int argc, char ** argv) {
         // Ensure temp_upload_dir exists and is writable
         struct stat st = {0};
         if (stat(sparams.temp_upload_dir.c_str(), &st) == -1) {
+#if defined(_WIN32) || defined(_WIN64)
+            if (mkdir(sparams.temp_upload_dir.c_str()) == -1) {
+#else
             if (mkdir(sparams.temp_upload_dir.c_str(), 0700) == -1) {
+#endif
                 fprintf(stderr, "error: could not create temp upload dir: %s\n", sparams.temp_upload_dir.c_str());
                 exit(1);
             }
