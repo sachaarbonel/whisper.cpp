@@ -24,6 +24,12 @@
 #include <sys/stat.h>
 #if !defined(_WIN32) && !defined(_WIN64)
 #include <unistd.h>
+#else
+#include <direct.h>  // For _mkdir
+#include <io.h>      // For _access
+#ifndef W_OK
+#define W_OK 2
+#endif
 #endif
 #include <semaphore>
 #include <csignal>
@@ -1131,7 +1137,7 @@ int main(int argc, char ** argv) {
         struct stat st = {0};
         if (stat(sparams.temp_upload_dir.c_str(), &st) == -1) {
 #if defined(_WIN32) || defined(_WIN64)
-            if (mkdir(sparams.temp_upload_dir.c_str()) == -1) {
+            if (_mkdir(sparams.temp_upload_dir.c_str()) == -1) {
 #else
             if (mkdir(sparams.temp_upload_dir.c_str(), 0700) == -1) {
 #endif
@@ -1139,7 +1145,11 @@ int main(int argc, char ** argv) {
                 exit(1);
             }
         }
+#if defined(_WIN32) || defined(_WIN64)
+        if (_access(sparams.temp_upload_dir.c_str(), W_OK) == -1) {
+#else
         if (access(sparams.temp_upload_dir.c_str(), W_OK) == -1) {
+#endif
             fprintf(stderr, "error: temp upload dir not writable: %s\n", sparams.temp_upload_dir.c_str());
             exit(1);
         }
