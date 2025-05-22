@@ -22,7 +22,9 @@
 #include <random>
 #include <iostream>
 #include <sys/stat.h>
+#if !defined(_WIN32) && !defined(_WIN64)
 #include <unistd.h>
+#endif
 #include <semaphore>
 #include <csignal>
 
