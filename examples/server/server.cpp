@@ -26,6 +26,30 @@
 #include <semaphore>
 #include <csignal>
 
+
+// ---- PORTABLE COUNTING SEMAPHORE ----
+class CountingSemaphore {
+public:
+    explicit CountingSemaphore(int initial) : count_(initial) {}
+    void release() {
+        std::unique_lock<std::mutex> lock(mtx_);
+        ++count_;
+        cv_.notify_one();
+    }
+    bool try_acquire() {
+        std::unique_lock<std::mutex> lock(mtx_);
+        if (count_ > 0) {
+            --count_;
+            return true;
+        }
+        return false;
+    }
+private:
+    std::mutex mtx_;
+    std::condition_variable cv_;
+    int count_;
+};
+
 using namespace httplib;
 using json = nlohmann::ordered_json;
 
@@ -40,7 +64,7 @@ using json = nlohmann::ordered_json;
 std::atomic<bool> shutdown_requested{false};
 httplib::Server *g_svr_ptr = nullptr;
 std::atomic<int> g_active_tasks{0};
-std::unique_ptr<std::counting_semaphore<>> task_queue_slots;
+std::unique_ptr<CountingSemaphore> task_queue_slots;
 std::atomic<int> active_http_requests{0};
 // --------------------------------------
 
@@ -1084,7 +1108,7 @@ int main(int argc, char ** argv) {
     g_debug_mode = params.debug_mode;
 
     // Initialize the task_queue_slots semaphore with the configured max_task_queue size
-    task_queue_slots = std::make_unique<std::counting_semaphore<>>(sparams.max_task_queue > 0 ? sparams.max_task_queue : 100);
+    task_queue_slots = std::make_unique<CountingSemaphore>(sparams.max_task_queue > 0 ? sparams.max_task_queue : 100);
     SERVER_DEBUG("Task queue semaphore initialized with max slots: " << sparams.max_task_queue);
 
     if (params.language != "auto" && whisper_lang_id(params.language.c_str()) == -1) {
