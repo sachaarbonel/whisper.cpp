@@ -526,7 +526,7 @@ int error_type_to_http_status(ErrorType type) {
         case ErrorType::INVALID_REQUEST: return 400;
         case ErrorType::SERVER_ERROR:    return 500;
         case ErrorType::NOT_FOUND:       return 404;
-        default:                               return 500;
+        default:                         return 500;
     }
 }
 
