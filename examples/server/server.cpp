@@ -223,7 +223,7 @@ void whisper_print_usage(int /*argc*/, char ** argv, const whisper_params & para
     fprintf(stderr, "  --keep-alive-timeout N,        [%-7d] Idle keep-alive timeout in seconds\n", sparams.keep_alive_timeout);
     fprintf(stderr, "  --backlog N,                   [%-7d] Listen() backlog (max pending connections)\n", sparams.listen_backlog);
     fprintf(stderr, "  --max-upload-size N,           [%-7zu] Max upload size in bytes (default 104857600)\n", sparams.max_upload_size);
-    fprintf(stderr, "  --temp-upload-dir DIR,          [%-7s] Directory for temporary uploads\n", sparams.temp_upload_dir.c_str());
+    fprintf(stderr, "  --temp-upload-dir DIR,         [%-7s] Directory for temporary uploads\n", sparams.temp_upload_dir.c_str());
     fprintf(stderr, "  --inference-timeout N,         [%-7d] Inference timeout in seconds (default 30)\n", sparams.inference_timeout_sec);
     fprintf(stderr, "  --max-queue N,                 [%-7d] Maximum number of tasks in the inference queue\n", sparams.max_task_queue);
     fprintf(stderr, "\n");
