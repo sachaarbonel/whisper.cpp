@@ -517,7 +517,7 @@ std::string error_type_to_string(ErrorType type) {
         case ErrorType::INVALID_REQUEST: return "invalid_request_error";
         case ErrorType::SERVER_ERROR:    return "server_error";
         case ErrorType::NOT_FOUND:       return "not_found_error";
-        default:                               return "unknown_error";
+        default:                         return "unknown_error";
     }
 }
 
