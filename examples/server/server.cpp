@@ -725,7 +725,9 @@ void process_transcription_tasks(whisper_context * ctx) {
             }
             current_task = std::move(task_queue.front());
             task_queue.pop();
-            if (task_queue_slots) task_queue_slots->release();
+            if (task_queue_slots) {
+                task_queue_slots->release();
+            }
             SERVER_DEBUG("Worker picked up task id: " << current_task.id << ", queue size now: " << task_queue.size());
         }
         try {
