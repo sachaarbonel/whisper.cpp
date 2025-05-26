@@ -84,7 +84,9 @@ struct HttpRequestCounter {
         : ctr(counter) {
         ctr.fetch_add(1, std::memory_order_relaxed);
     }
-    ~HttpRequestCounter() { ctr.fetch_sub(1, std::memory_order_relaxed); }
+    ~HttpRequestCounter() {
+        ctr.fetch_sub(1, std::memory_order_relaxed);
+    }
     std::atomic<int>& ctr;
 };
 
