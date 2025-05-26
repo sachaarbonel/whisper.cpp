@@ -728,7 +728,6 @@ void process_transcription_tasks(whisper_context * ctx) {
             if (task_queue_slots) task_queue_slots->release();
             SERVER_DEBUG("Worker picked up task id: " << current_task.id << ", queue size now: " << task_queue.size());
         }
-        g_active_tasks.fetch_add(1, std::memory_order_relaxed);
         try {
             SERVER_DEBUG("Worker starting inference for task id: " << current_task.id);
             whisper_full_params wparams = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
@@ -883,7 +882,7 @@ void process_transcription_tasks(whisper_context * ctx) {
                 SERVER_DEBUG("Worker task id: " << current_task.id << " - EXCEPTION while setting promise after unknown exception: " << promise_ex.what());
             }
         }
-        g_active_tasks.fetch_sub(1, std::memory_order_relaxed);
+        // g_active_tasks.fetch_sub(1, std::memory_order_relaxed); // Removed redundant decrement
         SERVER_DEBUG("Worker finished handling task id: " << current_task.id << ". Active tasks: " << g_active_tasks.load());
     }
 }
