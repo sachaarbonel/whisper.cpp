@@ -666,8 +666,13 @@ public:
     ~ThreadGuard() { if (t.joinable()) t.join(); }
     ThreadGuard(const ThreadGuard&) = delete;
     ThreadGuard& operator=(const ThreadGuard&) = delete;
-    ThreadGuard(ThreadGuard&& other) noexcept : t(std::move(other.t)) {}
-    ThreadGuard& operator=(ThreadGuard&& other) noexcept { if (t.joinable()) t.join(); t = std::move(other.t); return *this; }
+    ThreadGuard(ThreadGuard&& other) noexcept 
+        : t(std::move(other.t)) {}
+    ThreadGuard& operator=(ThreadGuard&& other) noexcept {
+        if (t.joinable()) t.join();
+        t = std::move(other.t);
+        return *this;
+    }
 };
 
 /**
