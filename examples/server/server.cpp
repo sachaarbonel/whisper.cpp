@@ -1177,7 +1177,7 @@ int main(int argc, char ** argv) {
     for (int i = 0; i < num_workers; ++i) {
         // Ensure context_pool[i] is valid before starting a thread with it
         if (i < context_pool.size() && context_pool[i]) { 
-            worker_threads.emplace_back(std::thread{process_transcription_tasks, context_pool[i].get()});
+            worker_threads.emplace_back(process_transcription_tasks, context_pool[i].get());
         }
     }
 
@@ -1349,7 +1349,7 @@ int main(int argc, char ** argv) {
             shutdown_requested.store(false, std::memory_order_release); 
             for (int i = 0; i < num_workers; ++i) {
                 if (i < context_pool.size() && context_pool[i]) { 
-                    worker_threads.emplace_back(std::thread{process_transcription_tasks, context_pool[i].get()});
+                    worker_threads.emplace_back(process_transcription_tasks, context_pool[i].get());
                 }
             }
             fprintf(stderr, "%d new worker threads started.\n", (int)worker_threads.size());
