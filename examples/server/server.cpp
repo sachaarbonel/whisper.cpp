@@ -1024,7 +1024,6 @@ bool enqueue_task(std::atomic<int> &task_id_counter, std::shared_ptr<std::vector
 void prepare_and_send_response(Response &res, const Request &req, std::shared_future<json> fut, std::shared_ptr<std::atomic<bool>> connection_alive, std::shared_ptr<std::atomic<bool>> cancel_flag, int task_id, const server_params& sparams) {
     SERVER_DEBUG("Waiting for worker to process task id: " << task_id);
     try {
-        using namespace std::chrono_literals;
         std::future_status status = fut.wait_for(std::chrono::seconds(sparams.inference_timeout_sec));
         if (req.is_connection_closed()) {
             SERVER_DEBUG("Request cancelled (client disconnected before future get) for task id: " << task_id);
