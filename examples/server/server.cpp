@@ -714,7 +714,7 @@ int main(int argc, char ** argv) {
     whisper_params default_params = params;
 
     // this is only called if no index.html is found in the public --path
-    svr->Get(sparams.request_path + "/", [&default_content](const Request &, Response &res){
+    svr->Get(sparams.request_path + "/", [&](const Request &, Response &res){
         res.set_content(default_content, "text/html");
         return false;
     });
@@ -1142,7 +1142,7 @@ int main(int argc, char ** argv) {
 #endif
 
     // clean up function, to be called before exit
-    auto clean_up = [&ctx]() {
+    auto clean_up = [&]() {
         whisper_print_timings(ctx);
         whisper_free(ctx);
     };
