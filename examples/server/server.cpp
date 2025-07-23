@@ -708,7 +708,6 @@ int main(int argc, char ** argv) {
 
     // initialize openvino encoder. this has no effect on whisper.cpp builds that don't have OpenVINO configured
     whisper_ctx_init_openvino_encoder(ctx, nullptr, params.openvino_encode_device.c_str(), nullptr);
-    
     // warmup model if warmup file is provided
     if (!params.warmup_file.empty()) {
         printf("Warming up model with audio file: %s\n", params.warmup_file.c_str());
@@ -742,7 +741,6 @@ int main(int argc, char ** argv) {
             fprintf(stderr, "warning: failed to read warmup audio file '%s'\n", params.warmup_file.c_str());
         }
     }
-    
     state.store(SERVER_STATE_READY);
 
 
