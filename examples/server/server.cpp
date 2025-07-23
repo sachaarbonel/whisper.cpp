@@ -129,6 +129,9 @@ struct whisper_params {
     float       vad_max_speech_duration_s = FLT_MAX;
     int         vad_speech_pad_ms = 30;
     float       vad_samples_overlap = 0.1f;
+
+    // Warmup parameters
+    std::string warmup_file = "";
 };
 
 void whisper_print_usage(int /*argc*/, char ** argv, const whisper_params & params, const server_params& sparams) {
@@ -192,6 +195,7 @@ void whisper_print_usage(int /*argc*/, char ** argv, const whisper_params & para
                                                                                                                                   std::to_string(params.vad_max_speech_duration_s).c_str());
     fprintf(stderr, "  -vp N,     --vad-speech-pad-ms           N [%-7d] VAD speech padding (extend segments)\n",             params.vad_speech_pad_ms);
     fprintf(stderr, "  -vo N,     --vad-samples-overlap         N [%-7.2f] VAD samples overlap (seconds between segments)\n", params.vad_samples_overlap);
+    fprintf(stderr, "  -wf PATH,  --warmup-file PATH            [%-7s] path to audio file for model warmup\n", params.warmup_file.c_str());
     fprintf(stderr, "\n");
 }
 
@@ -258,6 +262,7 @@ bool whisper_params_parse(int argc, char ** argv, whisper_params & params, serve
         else if (arg == "-vmsd" || arg == "--vad-max-speech-duration-s")   { params.vad_max_speech_duration_s   = std::stof(argv[++i]); }
         else if (arg == "-vp"   || arg == "--vad-speech-pad-ms")           { params.vad_speech_pad_ms           = std::stoi(argv[++i]); }
         else if (arg == "-vo"   || arg == "--vad-samples-overlap")         { params.vad_samples_overlap         = std::stof(argv[++i]); }
+        else if (arg == "-wf"   || arg == "--warmup-file")                 { params.warmup_file                 = argv[++i]; }
         else {
             fprintf(stderr, "error: unknown argument: %s\n", arg.c_str());
             whisper_print_usage(argc, argv, params, sparams);
@@ -703,6 +708,41 @@ int main(int argc, char ** argv) {
 
     // initialize openvino encoder. this has no effect on whisper.cpp builds that don't have OpenVINO configured
     whisper_ctx_init_openvino_encoder(ctx, nullptr, params.openvino_encode_device.c_str(), nullptr);
+    
+    // warmup model if warmup file is provided
+    if (!params.warmup_file.empty()) {
+        printf("Warming up model with audio file: %s\n", params.warmup_file.c_str());
+        std::vector<float> pcmf32_warmup;
+        std::vector<std::vector<float>> pcmf32s_warmup;
+        
+        if (read_audio_data(params.warmup_file, pcmf32_warmup, pcmf32s_warmup, false)) {
+            whisper_full_params wparams = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
+            wparams.print_realtime = false;
+            wparams.print_progress = false;
+            wparams.print_timestamps = false;
+            wparams.print_special = false;
+            wparams.translate = false;
+            wparams.language = "en";
+            wparams.n_threads = params.n_threads;
+            wparams.n_max_text_ctx = 128;
+            wparams.no_context = true;
+            wparams.single_segment = true;
+            wparams.audio_ctx = 768;
+            
+            const auto t_start = std::chrono::high_resolution_clock::now();
+            
+            if (whisper_full_parallel(ctx, wparams, pcmf32_warmup.data(), pcmf32_warmup.size(), 1) == 0) {
+                const auto t_end = std::chrono::high_resolution_clock::now();
+                const auto t_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count();
+                printf("Model warmup completed in %d ms\n", (int)t_ms);
+            } else {
+                fprintf(stderr, "warning: model warmup failed\n");
+            }
+        } else {
+            fprintf(stderr, "warning: failed to read warmup audio file '%s'\n", params.warmup_file.c_str());
+        }
+    }
+    
     state.store(SERVER_STATE_READY);
 
 
