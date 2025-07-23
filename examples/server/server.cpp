@@ -129,7 +129,6 @@ struct whisper_params {
     float       vad_max_speech_duration_s = FLT_MAX;
     int         vad_speech_pad_ms = 30;
     float       vad_samples_overlap = 0.1f;
-
     // Warmup parameters
     std::string warmup_file = "";
 };
